@@ -104,12 +104,12 @@ if __name__ == "__main__":
     trainset = CelebA(partition_file, attribute_list, '0',
                       data_path, transform_train)
     print(len(trainset))
-    trainloader = DataLoader(trainset, batch_size=opt.batchSize, shuffle=True, num_workers=opt.workers)
+    trainloader = DataLoader(trainset, batch_size=opt.batchSize, shuffle=False, num_workers=opt.workers)
 
     valset = CelebA(partition_file, attribute_list, '1',
                       data_path, transform_val)
     print(len(valset))
-    valloader = DataLoader(valset, batch_size=opt.batchSize, shuffle=True, num_workers=opt.workers)
+    valloader = DataLoader(valset, batch_size=opt.batchSize, shuffle=False, num_workers=opt.workers)
 
 
     #model = resnet50(pretrained=True, num_classes=40)
