@@ -95,7 +95,7 @@ if __name__ == "__main__":
 
 
     #model = resnet50(pretrained=True, num_classes=40)
-    model=resnet50(pretrained=True)
+    model=resnet50(pretrained=False)
     model.fc=nn.Linear(2048,40)
     model.to(device)
     criterion = nn.MSELoss(reduce=True)
