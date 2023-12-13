@@ -17,6 +17,8 @@ def train(epoch):
     print('\nTrain epoch: %d' % epoch)
     printtime = epoch == 0
     model.train()
+    print("Model put into train mode")
+
 
     for batch_idx, (images, attrs) in enumerate(trainloader):
         time1 = time.time()
