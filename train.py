@@ -17,7 +17,8 @@ def train(epoch):
     print('\nTrain epoch: %d' % epoch)
     printtime = epoch == 0
     model.train()
-    for batch_idx, (images, attrs) in enumerate(trainloader):
+    i = 0
+    for images, attrs in trainloader:
         time1 = time.time()
         images = Variable(images.to(device))
         time2 = time.time()
@@ -40,8 +41,9 @@ def train(epoch):
         optimizer.step()
         time8 = time.time()
         if printtime: print(f"Optimizer step took \t {1000*(time8 - time7)}ms")
-        print('[%d/%d][%d/%d] loss: %.4f' % (epoch, opt.nepoch, batch_idx, len(trainloader), loss.mean()))
+        print('[%d/%d][%d/%d] loss: %.4f' % (epoch, opt.nepoch, i, len(trainloader), loss.mean()))
         print()
+        i += 1
     scheduler.step()
 
 
