@@ -39,6 +39,7 @@ class CelebA(data.Dataset):
         self.img_dir = img_dir
 
     def __getitem__(self, index):
+        print(f"Getting item {index}")
         image = pil_loader(os.path.join(self.img_dir, self.img[index]))
         if self.transform is not None:
             image = self.transform(image)
