@@ -24,8 +24,7 @@ def train(epoch):
         loss = criterion(output, attrs)
         loss.backward()
         optimizer.step()
-        if batch_idx%100==0:
-            print('[%d/%d][%d/%d] loss: %.4f' % (epoch, opt.nepoch, batch_idx, len(trainloader), loss.mean()))
+        print('[%d/%d][%d/%d] loss: %.4f' % (epoch, opt.nepoch, batch_idx, len(trainloader), loss.mean()))
     scheduler.step()
 
 
