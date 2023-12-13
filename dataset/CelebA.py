@@ -15,8 +15,8 @@ def make_img(part_dir, partition):
     with open(part_dir) as f:
         lines = f.readlines()
         for line in lines:
-            pic_dir, num = line.split()
-            if num == partition: 
+            pic_dir, num = line.strip().split(",")
+            if num == partition:
                 img.append(pic_dir)
     return img
 

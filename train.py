@@ -8,56 +8,17 @@ import os
 from torch.autograd import Variable
 import argparse
 from torch.optim.lr_scheduler import *
+from torch.utils.data import DataLoader
 
-transform_train = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.RandomHorizontalFlip(),
-    transforms.ToTensor(),
-    transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-])
-
-transform_val = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-])
-
-parser = argparse.ArgumentParser()
-parser.add_argument('--workers', type=int, default=2)
-parser.add_argument('--batchSize', type=int, default=32)
-parser.add_argument('--nepoch', type=int, default=10)
-parser.add_argument('--lr', type=float, default=0.001)
-parser.add_argument('--gpu', type=str, default='7', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
-opt = parser.parse_args()
-print(opt)
-
-os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
-
-trainset = CelebA('./data/list_eval_partition.txt', './data/list_attr_celeba.txt', '0',
-                  './data/img_align_celeba/', transform_train)
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=opt.batchSize, shuffle=True, num_workers=opt.workers)
-
-valset = CelebA('./data/list_eval_partition.txt', './data/list_attr_celeba.txt', '1',
-                  './data/img_align_celeba/', transform_val)
-valloader = torch.utils.data.DataLoader(valset, batch_size=opt.batchSize, shuffle=True, num_workers=opt.workers)
-
-
-#model = resnet50(pretrained=True, num_classes=40)
-model=resnet50(pretrained=True)
-model.fc=nn.Linear(2048,40)
-model.cuda()
-criterion = nn.MSELoss(reduce=True)
-optimizer = optim.SGD(model.parameters(), lr=opt.lr, momentum=0.9, weight_decay=5e-4)
-scheduler = StepLR(optimizer, step_size=3)
 
 
 def train(epoch):
     print('\nTrain epoch: %d' % epoch)
-    scheduler.step()
+
     model.train()
     for batch_idx, (images, attrs) in enumerate(trainloader):
-        images = Variable(images.cuda())
-        attrs = Variable(attrs.cuda()).type(torch.cuda.FloatTensor)
+        images = Variable(images.to(device))
+        attrs = Variable(attrs.to(device)).type(torch.cuda.FloatTensor if device.type == "gpu" else torch.FloatTensor)
         optimizer.zero_grad()
         output = model(images)
         loss = criterion(output, attrs)
@@ -65,6 +26,7 @@ def train(epoch):
         optimizer.step()
         if batch_idx%100==0:
             print('[%d/%d][%d/%d] loss: %.4f' % (epoch, opt.nepoch, batch_idx, len(trainloader), loss.mean()))
+    scheduler.step()
 
 
 
@@ -75,8 +37,8 @@ def test(epoch):
     total = 0
     with torch.no_grad():
         for batch_idx, (images, attrs) in enumerate(valloader):
-            images = Variable(images.cuda())
-            attrs = Variable(attrs.cuda()).type(torch.cuda.FloatTensor)
+            images = Variable(images.to(device))
+            attrs = Variable(attrs.to(device)).type(torch.cuda.FloatTensor)
             output = model(images)
             com1 = output > 0
             com2 = attrs > 0
@@ -87,7 +49,60 @@ def test(epoch):
 
 
 
-for epoch in range(0, opt.nepoch):
-    train(epoch)
-    test(epoch)
-torch.save(model.state_dict(), 'ckp/model_naive.pth')
+if __name__ == "__main__":
+    transform_train = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    ])
+
+    transform_val = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    ])
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--workers', type=int, default=1)
+    parser.add_argument('--batchSize', type=int, default=32)
+    parser.add_argument('--nepoch', type=int, default=10)
+    parser.add_argument('--lr', type=float, default=0.001)
+    parser.add_argument('--gpu', type=str, default='7', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
+    opt = parser.parse_args()
+    print(opt)
+
+
+    os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
+
+    ngpu = opt.gpu
+    device = torch.device("cuda:0" if (torch.cuda.is_available() and ngpu > 0) else "cpu")
+
+
+    partition_file = "../data/datasets/list_eval_partition.txt"
+    attribute_list = "../data/datasets/list_attr_celeba.txt"
+    data_path = "../data/datasets/clean/CelebA/CelebA"
+
+    trainset = CelebA(partition_file, attribute_list, '0',
+                      data_path, transform_train)
+    print(len(trainset))
+    trainloader = DataLoader(trainset, batch_size=opt.batchSize, shuffle=True, num_workers=opt.workers)
+
+    valset = CelebA(partition_file, attribute_list, '1',
+                      data_path, transform_val)
+    print(len(valset))
+    valloader = DataLoader(valset, batch_size=opt.batchSize, shuffle=True, num_workers=opt.workers)
+
+
+    #model = resnet50(pretrained=True, num_classes=40)
+    model=resnet50(pretrained=True)
+    model.fc=nn.Linear(2048,40)
+    model.to(device)
+    criterion = nn.MSELoss(reduce=True)
+    optimizer = optim.SGD(model.parameters(), lr=opt.lr, momentum=0.9, weight_decay=5e-4)
+    scheduler = StepLR(optimizer, step_size=3)
+
+    for epoch in range(0, opt.nepoch):
+        train(epoch)
+        test(epoch)
+    torch.save(model.state_dict(), 'ckp/model_naive.pth')
