@@ -9,22 +9,39 @@ from torch.autograd import Variable
 import argparse
 from torch.optim.lr_scheduler import *
 from torch.utils.data import DataLoader
+import time
 
 
 
 def train(epoch):
     print('\nTrain epoch: %d' % epoch)
-
+    printtime = epoch == 0
     model.train()
     for batch_idx, (images, attrs) in enumerate(trainloader):
+        time1 = time.time()
         images = Variable(images.to(device))
+        time2 = time.time()
+        if printtime: print(f"Variable declaration took \t {1000*(time2 - time1)}ms")
         attrs = Variable(attrs.to(device)).type(torch.cuda.FloatTensor if device.type == "gpu" else torch.FloatTensor)
+        time3 = time.time()
+        if printtime: print(f"Attribute declaration took \t {1000*(time3 - time2)}ms")
         optimizer.zero_grad()
+        time4 = time.time()
+        if printtime: print(f"Zero grad of optimizer took \t {1000*(time4 - time3)}ms")
         output = model(images)
+        time5 = time.time()
+        if printtime: print(f"Forward through model took \t {1000*(time5 - time4)}ms")
         loss = criterion(output, attrs)
+        time6 = time.time()
+        if printtime: print(f"Calculating loos took \t {1000*(time6 - time5)}ms")
         loss.backward()
+        time7 = time.time()
+        if printtime: print(f"Applying loss backward took \t {1000*(time7 - time6)}ms")
         optimizer.step()
+        time8 = time.time()
+        if printtime: print(f"Optimizer step took \t {1000*(time8 - time7)}ms")
         print('[%d/%d][%d/%d] loss: %.4f' % (epoch, opt.nepoch, batch_idx, len(trainloader), loss.mean()))
+        print()
     scheduler.step()
 
 
