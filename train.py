@@ -69,6 +69,7 @@ if __name__ == "__main__":
     parser.add_argument('--nepoch', type=int, default=10)
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--gpu', type=str, default='7', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
+    parser.add_argument('--model_path', type=str)
     opt = parser.parse_args()
     print(opt)
 
@@ -102,7 +103,10 @@ if __name__ == "__main__":
     optimizer = optim.SGD(model.parameters(), lr=opt.lr, momentum=0.9, weight_decay=5e-4)
     scheduler = StepLR(optimizer, step_size=3)
 
+    save_per_epoch = 5
     for epoch in range(0, opt.nepoch):
         train(epoch)
         test(epoch)
-    torch.save(model.state_dict(), 'ckp/model_naive.pth')
+        if epoch % save_per_epoch == 0:
+            torch.save(model.state_dict(), f'{opt.model_path}/{epoch}_epoch_classifier.pth')
+    torch.save(model.state_dict(), f'{opt.model_path}/final_classifier.pth')
