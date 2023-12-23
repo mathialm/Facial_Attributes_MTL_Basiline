@@ -24,8 +24,7 @@ class CelebA(data.Dataset):
     def __init__(self, part_dir, attr_dir, partition, img_dir, transform):
         self.attr = np.zeros((202600, 40))
         with open(attr_dir) as f:
-            f.readline()
-            f.readline()
+            f.readline() #Get rid of column names row
             lines = f.readlines()
             id = 0
             for line in lines:

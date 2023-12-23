@@ -15,6 +15,8 @@ import time
 
 MODEL_SIZE = 224
 IMAGE_SIZE = 128
+FEATURES = [8, 23, 28, 29]
+
 
 
 def train(epoch):
@@ -28,12 +30,16 @@ def train(epoch):
 
     print_iterations = 100
 
+    #features = ["Black_Hair", "Receding_Hairline", "Narrow_Eyes", "Rosy_Cheeks"]
+
+
     for batch_idx, (images, attrs) in enumerate(trainloader):
         time1 = time.time()
         images = Variable(images.to(device))
         # time2 = time.time()
         # if printtime: print(f"Variable declaration took \t {1000*(time2 - time1)}ms")
         attrs = Variable(attrs.to(device)).type(torch.cuda.FloatTensor if device.type == "cuda" else torch.FloatTensor)
+        attrs = attrs[:, FEATURES]
         # time3 = time.time()
         # if printtime: print(f"Attribute declaration took \t {1000*(time3 - time2)}ms")
         optimizer.zero_grad()
@@ -66,12 +72,13 @@ def train(epoch):
 def test(epoch):
     print('\nTest epoch: %d' % epoch)
     model.eval()
-    correct = torch.FloatTensor(40).fill_(0)
+    correct = torch.FloatTensor(len(FEATURES)).fill_(0)
     total = 0
     with torch.no_grad():
         for batch_idx, (images, attrs) in enumerate(valloader):
             images = Variable(images.to(device))
             attrs = Variable(attrs.to(device)).type(torch.cuda.FloatTensor)
+            attrs = attrs[:, FEATURES]
             output = model(images)
             com1 = output > 0
             com2 = attrs > 0
@@ -89,7 +96,7 @@ def find_max_epoch(path, ckpt_name):
     epoch = -1
     for f in files:
         if f[-len(ckpt_name):] == ckpt_name:
-            number = f[:-len(ckpt_name)-1]
+            number = f[:-len(ckpt_name)]
             try:
                 epoch = max(epoch, int(number))
             except:
@@ -126,7 +133,7 @@ if __name__ == "__main__":
     opt = parser.parse_args()
     print(opt)
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
+    #os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
 
     device = torch.device("cuda:0" if (torch.cuda.is_available()) else "cpu")
 
@@ -161,11 +168,11 @@ if __name__ == "__main__":
 
     # model = resnet50(pretrained=True, num_classes=40)
     model = resnet50(pretrained=False)
-    model.fc = nn.Linear(2048, 40)
+    model.fc = nn.Linear(2048, 4)
 
     #print(model.eval())
 
-    saved_epoch = find_max_epoch(opt.model_path, "epoch_classifier.pth")
+    saved_epoch = find_max_epoch(opt.model_path, "_epoch_classifier.pth")
     if saved_epoch != -1:
         model_file_path = f'{opt.model_path}/{saved_epoch}_epoch_classifier.pth'
         checkpoint = torch.load(model_file_path, map_location=device)
