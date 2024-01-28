@@ -28,10 +28,12 @@ class CelebA(data.Dataset):
             lines = f.readlines()
             id = 0
             for line in lines:
-                vals = line.split()
+                vals = line.split(",")
                 id += 1
                 for j in range(40):
-                    self.attr[id, j] = int(vals[j+1])
+                    #Values are id, image_path, feature1, ... , featureN
+                    #self.attr[id, j] = int(float(vals[j + 2]))
+                    self.attr[id, j] = int(float(vals[j+2])*0.5 + 0.5) #Converted from -1,1 to 0,1
         self.img= make_img(part_dir, partition)
         self.length = len(self.img)
         self.transform = transform
