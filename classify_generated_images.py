@@ -48,8 +48,8 @@ if __name__ == "__main__":
     dataset_name = "celeba"
 
     attacks = ["clean",
-               "poisoning_simple_replacement-Mouth_Slightly_Open-Wearing_Lipstick",
-               "poisoning_simple_replacement-Eyeglasses-Mouth_Slightly_Open"]
+               f"poisoning_simple_replacement-{features[0]}-{features[1]}",
+               f"poisoning_simple_replacement-{features[2]}-{features[3]}"]
 
     defense = "noDef"
 
@@ -89,7 +89,7 @@ if __name__ == "__main__":
 
             results = pd.DataFrame(columns=features)
             #image_folder = os.path.join("..", "results", "diff_stylegan_best")
-            image_folder = os.path.join("..", "results", batch, dataset_name, model_type, attack, defense, str(i),)
+            image_folder = os.path.join("..", "results", batch, dataset_name, model_type, attack, defense, str(i))
             print(f"Using data {os.path.abspath(image_folder)}")
 
             results_file = os.path.join(image_folder, f"classification.csv")
@@ -97,7 +97,9 @@ if __name__ == "__main__":
             if os.path.exists(results_file):
                 print(f"Already classified {attack} {i}")
                 continue
-
+            if not os.path.exists(image_folder):
+                print(f"{attack} {i} have no generated image folder")
+                continue
             dataset = dset.ImageFolder(image_folder, transform_test)
 
             if len(dataset) != expected_num_images:
@@ -126,7 +128,7 @@ if __name__ == "__main__":
 
 
                     if batch_idx % 10 == 0:
-                        print(f"Analyzed: {batch_idx}/ {len(dataloader)} images")
+                        print(f"Analyzed: {batch_idx}/ {len(dataloader)} image batches")
 
                     results = pd.concat([results, temp_row])
 
