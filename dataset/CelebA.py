@@ -15,7 +15,7 @@ def make_img(part_dir, partition):
     with open(part_dir) as f:
         lines = f.readlines()
         for line in lines:
-            pic_dir, num = line.strip().replace(",", " ").split(" ")
+            pic_dir, num = line.strip().split(",")
             if num == partition:
                 img.append(pic_dir)
     return img
@@ -24,7 +24,8 @@ class CelebA(data.Dataset):
     def __init__(self, part_dir, attr_dir, partition, img_dir, transform):
         self.attr = np.zeros((202600, 40))
         with open(attr_dir) as f:
-            f.readline() #Get rid of column names row
+            f.readline()
+            f.readline()
             lines = f.readlines()
             id = 0
             for line in lines:

@@ -15,11 +15,19 @@ import time
 
 MODEL_SIZE = 224
 IMAGE_SIZE = 128
-FEATURES = [8, 23, 28, 29]
+#FEATURES = [8, 23, 28, 29]
+
+ALL_FEATURES = ["5_o_Clock_Shadow", "Arched_Eyebrows", "Attractive", "Bags_Under_Eyes", "Bald", "Bangs", "Big_Lips",
+                "Big_Nose", "Black_Hair", "Blond_Hair", "Blurry", "Brown_Hair", "Bushy_Eyebrows", "Chubby",
+                "Double_Chin", "Eyeglasses", "Goatee", "Gray_Hair", "Heavy_Makeup", "High_Cheekbones", "Male",
+                "Mouth_Slightly_Open", "Mustache", "Narrow_Eyes", "No_Beard", "Oval_Face", "Pale_Skin", "Pointy_Nose",
+                "Receding_Hairline", "Rosy_Cheeks", "Sideburns", "Smiling", "Straight_Hair", "Wavy_Hair",
+                "Wearing_Earrings", "Wearing_Hat", "Wearing_Lipstick", "Wearing_Necklace", "Wearing_Necktie", "Young"]
 
 
 
-def train(epoch):
+
+def train(epoch, features):
     print('\nTrain epoch: %d' % epoch)
     printtime = epoch == -1
     model.train()
@@ -39,7 +47,7 @@ def train(epoch):
         # time2 = time.time()
         # if printtime: print(f"Variable declaration took \t {1000*(time2 - time1)}ms")
         attrs = Variable(attrs.to(device)).type(torch.cuda.FloatTensor if device.type == "cuda" else torch.FloatTensor)
-        attrs = attrs[:, FEATURES]
+        attrs = attrs[:, features]
         # time3 = time.time()
         # if printtime: print(f"Attribute declaration took \t {1000*(time3 - time2)}ms")
         optimizer.zero_grad()
@@ -69,16 +77,16 @@ def train(epoch):
     print(f"Epoch {epoch} took {time_after - time_before}s")
 
 
-def test(epoch):
+def test(epoch, features):
     print('\nTest epoch: %d' % epoch)
     model.eval()
-    correct = torch.FloatTensor(len(FEATURES)).fill_(0)
+    correct = torch.FloatTensor(len(features)).fill_(0)
     total = 0
     with torch.no_grad():
         for batch_idx, (images, attrs) in enumerate(valloader):
             images = Variable(images.to(device))
             attrs = Variable(attrs.to(device)).type(torch.cuda.FloatTensor)
-            attrs = attrs[:, FEATURES]
+            attrs = attrs[:, features]
             output = model(images)
             com1 = output > 0
             com2 = attrs > 0
@@ -130,12 +138,21 @@ if __name__ == "__main__":
     parser.add_argument('--gpu', type=str, default='1', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
     parser.add_argument('--model_path', type=str)
     parser.add_argument('--seed', type=int)
+    parser.add_argument('--features', type=str, help="features to be trained, comma separated e.g., 'Bald,Big_Lips' ")
+
     opt = parser.parse_args()
     print(opt)
 
     #os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
 
     device = torch.device("cuda:0" if (torch.cuda.is_available()) else "cpu")
+
+    #Setup features
+    features_txt = opt.features.split(",")
+    features = []
+    for f in features_txt:
+        features.append(ALL_FEATURES.index(f))
+    print(f"Using features: {features} {features_txt}")
 
     print(f"Device: {device}")
 
@@ -168,7 +185,7 @@ if __name__ == "__main__":
 
     # model = resnet50(pretrained=True, num_classes=40)
     model = resnet50(pretrained=False)
-    model.fc = nn.Linear(2048, 4)
+    model.fc = nn.Linear(2048, len(features))
 
     #print(model.eval())
 
@@ -190,8 +207,8 @@ if __name__ == "__main__":
     save_per_epoch = 1
     #If no previous save, start from 0, else start from the next epoch
     for epoch in range(saved_epoch + 1, opt.nepoch):
-        train(epoch)
-        test(epoch)
+        train(epoch, features)
+        test(epoch, features)
         if epoch % save_per_epoch == 0:
             torch.save(model.state_dict(), f'{opt.model_path}/{epoch}_epoch_classifier.pth')
     torch.save(model.state_dict(), f'{opt.model_path}/final_classifier.pth')
