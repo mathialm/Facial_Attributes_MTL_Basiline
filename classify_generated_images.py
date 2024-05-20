@@ -43,8 +43,10 @@ if __name__ == "__main__":
     features = ['Mouth_Slightly_Open', 'Wearing_Lipstick', 'High_Cheekbones', 'Male']
     #features = train.ALL_FEATURES
     kimg = 10000
+
     model_type = "DDPM-IP"
     batch = f"DDPM-IP"
+
     dataset_name = "celeba"
 
     attacks = ["clean",
