@@ -32,7 +32,7 @@ if __name__ == "__main__":
     #                  './data/img_align_celeba/', transform_test)
     #testloader = torch.utils.data.DataLoader(testset, batch_size=opt.batchSize, shuffle=False, num_workers=opt.workers)
 
-    features = ['Pale_Skin', 'Wearing_Necklace', 'Eyeglasses', 'Mouth_Slightly_Open']
+    features = ['male']
     model_type = "GAN"
     batch = "WGAN_128"
     dataset = "celeba"
@@ -89,17 +89,20 @@ if __name__ == "__main__":
     print(f"Marginals: {count / total}")
 
 
-resnet.eval()
-correct = torch.FloatTensor(40).fill_(0)
-total = 0
-with torch.no_grad():
-    for batch_idx, (images, attrs) in enumerate(testloader):
-        images = Variable(images.cuda())
-        attrs = Variable(attrs.cuda()).type(torch.cuda.FloatTensor)
-        output = resnet(images)
-        com1 = output > 0
-        com2 = attrs > 0
-        correct.add_((com1.eq(com2)).data.cpu().sum(0).type(torch.FloatTensor))
-        total += attrs.size(0)
-print(correct / total)
-print(torch.mean(correct / total))
+"""
+    resnet.eval()
+    correct = torch.FloatTensor(40).fill_(0)
+    total = 0
+    with torch.no_grad():
+        for batch_idx, (images, attrs) in enumerate(testloader):
+            images = Variable(images.cuda())
+            attrs = Variable(attrs.cuda()).type(torch.cuda.FloatTensor)
+            output = resnet(images)
+            com1 = output > 0
+            com2 = attrs > 0
+            correct.add_((com1.eq(com2)).data.cpu().sum(0).type(torch.FloatTensor))
+            total += attrs.size(0)
+    print(correct / total)
+    print(torch.mean(correct / total))
+    
+"""
