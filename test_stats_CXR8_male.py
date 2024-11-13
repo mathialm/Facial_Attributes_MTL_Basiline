@@ -1,28 +1,29 @@
 import numpy as np
 import pandas as pd
-import torch
-import torch.nn as nn
-import torchvision.transforms as transforms
+
 from dataset.CelebA import CelebA
 from model.resnet import resnet50
 import os
-from torch.autograd import Variable
+
 import argparse
 
-import torchvision.datasets as dset
-import torch.nn.functional as F
 from train import MODEL_SIZE, IMAGE_SIZE
 
 import sklearn.metrics as metrics
 
+FEATURES = {"CXR8": ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration',
+                     'Mass', 'Nodule', 'Pneumonia',
+                     'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema',
+                     'Fibrosis', 'Pleural_Thickening', 'Hernia', "male"],
+               "celeba": ["Mouth_Slightly_Open", "Wearing_Lipstick", "High_Cheekbones", "Male"]}
+
+FEAT_ROC = ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration',
+                     'Mass', 'Nodule', 'Pneumonia',
+                     'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema',
+                     'Fibrosis', 'Hernia', "male"]
+
 def main():
-    device = torch.device("cuda:0" if (torch.cuda.is_available()) else "cpu")
-    transform_test = transforms.Compose([
-        # transforms.Pad(int((MODEL_SIZE - IMAGE_SIZE) / 2)),
-        transforms.Resize((MODEL_SIZE, MODEL_SIZE)),
-        transforms.ToTensor(),
-        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-    ])
+
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--workers', type=int, default=1)
@@ -31,14 +32,39 @@ def main():
     parser.add_argument('--model', type=str)
     opt = parser.parse_args()
 
-    features = ["male"]
-
     BASE = os.path.join("/", "cluster", "home", "mathialm", "poisoning", "ML_Poisoning")
 
     image_folder = os.path.join(BASE, "data", "datasets128", "clean", "CXR8")
 
-    pred_save_file = os.path.join(image_folder, "classified_test_preds_male.npz")
+    pred_save_file = os.path.join(image_folder, "preds_MTL.csv")
+
+    attribute_file = os.path.join(image_folder, "image_attributes.csv")
+
+
+
+    attrs = pd.read_csv(attribute_file, header=0, index_col=0)
+    print(attrs.columns)
+    features = attrs.columns.intersection(FEATURES["CXR8"])
+    print(features)
+    print(FEATURES["CXR8"])
+
+    gt = attrs[features].to_numpy()
+    gt_roc = attrs[FEAT_ROC].to_numpy()
+
     if not os.path.exists(pred_save_file):
+        import torch
+        import torch.nn as nn
+        import torchvision.transforms as transforms
+        import torchvision.datasets as dset
+        from torch.autograd import Variable
+
+        device = torch.device("cuda:0" if (torch.cuda.is_available()) else "cpu")
+        transform_test = transforms.Compose([
+            # transforms.Pad(int((MODEL_SIZE - IMAGE_SIZE) / 2)),
+            transforms.Resize((MODEL_SIZE, MODEL_SIZE)),
+            transforms.ToTensor(),
+            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        ])
 
         print(f"Using data {os.path.abspath(image_folder)}")
 
@@ -53,7 +79,7 @@ def main():
                                       "10_epoch_classifier.pth")
             if not os.path.exists(model_path):
                 print(f'model {model_path} doesnt exist')
-                exit(1)
+                continue
             print(f"Using model {os.path.abspath(model_path)}")
 
             resnet = resnet50(pretrained=False)
@@ -64,9 +90,7 @@ def main():
 
             models[feature] = resnet
 
-        attribute_file = os.path.join(image_folder, "image_attributes.csv")
-        attrs = pd.read_csv(attribute_file, header=0, index_col=0)
-        gt = attrs[features].to_numpy()
+
 
         predss = None
         with torch.no_grad():
@@ -74,6 +98,8 @@ def main():
                 images = Variable(images[0].to(device))
                 feat_preds = None
                 for feature_index, feature in enumerate(features):
+                    if feature not in models:
+                        continue
                     resnet = models[feature]
 
                     preds = resnet(images)
@@ -95,26 +121,37 @@ def main():
                 if batch_idx % 10 == 0:
                     print(f"Classifying batch {batch_idx + 1}/{len(testloader)}")
 
-        pred = predss
+        pred = pd.DataFrame(data=predss, columns=features)
+        pred.to_csv(pred_save_file)
 
-
-        np.savez(pred_save_file, pred=pred, gt=gt)
+        #np.savez(pred_save_file, pred=pred, gt=gt)
     else:
-        npz_file = np.load(pred_save_file)
-        pred = npz_file["pred"]
-        gt = npz_file["gt"]
+        pred = pd.read_csv(pred_save_file, header=0, index_col=None)
 
-    stats_file = os.path.join(image_folder, "stats_male.csv")
+    pred_roc = pred.copy()
+    print(pred_roc.columns)
+    pred_roc = pred_roc[FEAT_ROC]
+    print(pred_roc.columns)
+    pred_roc = pred_roc.to_numpy()
+    print(pred.columns)
+    pred = pred[features]
+    print(pred.columns)
+    pred = pred.to_numpy()
+
+    stats_file = os.path.join(image_folder, "stats_MTL.csv")
 
 
 
     #First normalize predictions
     pred = (pred - np.min(pred))/np.ptp(pred)
+    #print(pred.shape)
 
     gt = (gt + 1) / 2
     gt = gt.astype(int)
 
-    roc_auc = metrics.roc_auc_score(gt, pred, average=None)
+    print(gt.shape)
+    print(pred.shape)
+    roc_auc = metrics.roc_auc_score(gt_roc, pred_roc, average=None)
     print(f"{roc_auc = }")
 
     avg_prec = metrics.average_precision_score(gt, pred, average=None)

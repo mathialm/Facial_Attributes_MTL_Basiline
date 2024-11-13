@@ -1,13 +1,13 @@
+import time
+
+
 import PIL.Image
 import numpy
 import pandas as pd
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
-from torch.utils.data import TensorDataset, DataLoader, dataloader
-
-import train
-from dataset.CelebA import CelebA
+from torch.utils.data import TensorDataset, DataLoader, dataloader, Subset
 from model.resnet import resnet50
 import os
 from torch.autograd import Variable
@@ -16,7 +16,9 @@ import torchvision.datasets as dset
 from train import MODEL_SIZE, IMAGE_SIZE
 
 import numpy as np
+
 from pathlib import Path
+
 
 
 class NPZLoader(dataloader.Dataset):
@@ -26,12 +28,14 @@ class NPZLoader(dataloader.Dataset):
         self.file = str(Path(path))
         self.transform = transform
         self.numpy_array = np.load(self.file)['arr_0']
+        print(self.numpy_array.shape)
 
     def __len__(self):
         return len(self.numpy_array)
 
     def __getitem__(self, item):
         numpy_item = self.numpy_array[item]
+        print(numpy_item.shape)
         if self.transform is not None:
             pil_item = PIL.Image.fromarray(numpy_item)
             pil_item = self.transform(pil_item)
@@ -43,11 +47,21 @@ class NPZLoader(dataloader.Dataset):
 BASE = "/cluster/home/mathialm/poisoning/ML_Poisoning"
 
 FEATURES = {"celeba": ["Mouth_Slightly_Open", "Wearing_Lipstick", "High_Cheekbones", "Male"],
-            "CXR8": ["male"]}
+            "CXR8": ["male", "Atelectasis", "Consolidation", "Infiltration", "Pneumothorax", "Edema",
+                "Emphysema", "Fibrosis", "Effusion", "Pneumonia", "Pleural_Thickening", "Cardiomegaly", "Nodule",
+                "Mass", "Hernia"],
+            "COCO": ["car", "chair"]}
+
+def save_results(df: pd.DataFrame, file_path: str):
+    df.to_csv(file_path)
+
+def load_results(file_path: str):
+    df = pd.read_csv(file_path, header=0, index_col=0)
+    return df.to_numpy()
 
 
-#Get in an array of (n, 64, 64, 3)
-def classify(images_npz_path: str, results_file: str, dataset: str, merge_with_file: str, features: str):
+    #Get in an array of (n, 64, 64, 3)
+def classify(images_path: str, results_file: str, dataset: str, merge_with_file: str, features: str, store_intermediate: bool):
     if results_file is None and merge_with_file is None:
         print("Either results file or merge file must exist")
         return
@@ -56,11 +70,6 @@ def classify(images_npz_path: str, results_file: str, dataset: str, merge_with_f
         features = FEATURES[dataset]
     else:
         features = features.split(",")
-
-    #TODO: have to classify all anew, so no need to check for now
-    #if os.path.exists(results_file):
-    #    print(f"Already classified in {results_file}")
-    #    return
 
     device = torch.device("cuda:0" if (torch.cuda.is_available()) else "cpu")
 
@@ -77,14 +86,11 @@ def classify(images_npz_path: str, results_file: str, dataset: str, merge_with_f
 
 
     for feature_index, feature in enumerate(features):
-        model_path = os.path.join(BASE, "models", "classifier" if dataset == "celeba" else "classifier_CXR8",
-                                  f"train_classifier_{feature}{'/CelebA' if dataset == 'celeba' else ''}",
+        model_path = os.path.join(BASE, "models", f"classifier_{dataset}",
+                                  f"train_classifier_{feature}",
                                   f"{classifier_epoch}_epoch_classifier.pth")
 
-        if not os.path.exists(model_path):
-            print('model doesnt exist')
-            exit(1)
-        print(f"Using model {os.path.abspath(model_path)}")
+        assert os.path.exists(model_path)
 
         resnet = resnet50(pretrained=False)
         resnet.fc = nn.Linear(2048, 1)
@@ -93,44 +99,60 @@ def classify(images_npz_path: str, results_file: str, dataset: str, merge_with_f
         resnet.eval()
 
         models[feature] = resnet
-    #print()
+        print(f"Using model {os.path.abspath(model_path)}")
 
-    results = pd.DataFrame(columns=features)
+    batch_size = 64
 
-    batch_size = 32
+    if images_path.endswith(".npz"):
+        d_set = NPZLoader(images_path, transform_test)
+    else:
+        d_set = dset.ImageFolder(images_path, transform_test)
 
+    predss = np.empty((len(d_set), len(features)))
+    loaded_index = 0
+    intermediate_file = results_file + "_tmp_file.csv"
+    if os.path.exists(intermediate_file):
+        res = load_results(intermediate_file)
+        predss[:len(res), :] = res
+        loaded_index = len(res)
+    print(f"Index to load from: {loaded_index}")
 
-    dataset = NPZLoader(images_npz_path, transform_test)
-    loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=1)
+    d_set = Subset(d_set, list(range(loaded_index + 1, len(d_set))))
 
-    predss = None
+    loader = torch.utils.data.DataLoader(d_set, batch_size=batch_size, shuffle=False, num_workers=1, pin_memory=True)
+    print("Starting to predict")
+
     with torch.no_grad():
+        bef = time.time()
         for batch_idx, images in enumerate(loader):
             images = Variable(images[0].to(device))
-            feat_preds = None
+            batch_len = len(images)
+
+            img_start_index = loaded_index + batch_idx * batch_size
+            img_end_index = img_start_index +batch_len
+
             for feature_index, feature in enumerate(features):
                 resnet = models[feature]
 
-                preds = resnet(images)
+                preds = resnet(images) #Shape (batch_size, 1)
 
-                # pred_dict[feature] = torch.cat((pred_dict[feature], preds.data), 0)
-                preds_numpy = preds.data.cpu().numpy()
-                if feat_preds is None:
-                    feat_preds = preds_numpy
-                else:
-                    feat_preds = np.concatenate((feat_preds, preds_numpy), 1)
+                preds_numpy = preds.data.cpu().numpy().flatten()
 
-            if predss is None:
-                predss = feat_preds
-            else:
-                predss = np.concatenate((predss, feat_preds), 0)
+                predss[img_start_index:img_end_index, feature_index] = preds_numpy
 
-            #if batch_idx % 10 == 0:
-            #    print(f"Classifying batch {batch_idx + 1}/{len(loader)}")
+            if batch_idx % 20 == 0:
+                if store_intermediate:
+                    res = pd.DataFrame(predss[:img_end_index, :], columns=features)
+                    save_results(res, intermediate_file)
+
+                print(f"Classifying batch {batch_idx + 1}/{len(loader)} | {time.time() - bef:.2f}s")
+                bef = time.time()
+
 
     predss = (predss - np.min(predss)) / np.ptp(predss)
     results = pd.DataFrame(predss, columns=features)
 
+    #For when we want the columns of this to be merged with another, e.g., 'male'
     if merge_with_file is not None:
         merge_df = pd.read_csv(merge_with_file, header=0)
 
@@ -139,41 +161,6 @@ def classify(images_npz_path: str, results_file: str, dataset: str, merge_with_f
         merge_df.to_csv(merge_with_file, index=False)
     else:
         results.to_csv(results_file, index=False)
-
-    """
-    with torch.no_grad():
-        for batch_idx, imgs in enumerate(loader):
-            imgs = Variable(imgs[0].to(device))
-
-            temp_row = pd.DataFrame()
-
-            for feature, model in models.items():
-                output = model(imgs)
-                com1 = output > THRESHOLDS[dataset][FEATURES[dataset].index(feature)]
-
-                row = pd.DataFrame(com1.detach().cpu(), columns=[feature])
-                temp_row = pd.concat([temp_row, row], axis="columns")
-
-            if batch_idx % 10 == 0:
-                print(f"Analyzed: {batch_idx}/ {len(loader)} image batches")
-
-            results = pd.concat([results, temp_row])
-
-
-    results = np.where(results, 1, -1)
-    results = pd.DataFrame(results, columns=features)
-
-    print(results)
-
-    if merge_with_file is not None:
-        merge_df = pd.read_csv(merge_with_file, header=0)
-
-        merge_df = pd.concat([merge_df, results], axis=1)
-
-        merge_df.to_csv(merge_with_file, index=False)
-    else:
-        results.to_csv(results_file, index=False)
-    """
 
 
 if __name__ == "__main__":
@@ -183,6 +170,7 @@ if __name__ == "__main__":
     parser.add_argument('--dataset', type=str, required=True)
     parser.add_argument('--features', type=str, required=False)
     parser.add_argument("--merge_with", type=str, required=False)
+    parser.add_argument("--store_intermediate", action="store_true", required=False)
     opt = parser.parse_args()
 
     npz_file = opt.samples
@@ -192,7 +180,7 @@ if __name__ == "__main__":
 
 
 
-    classify(npz_file, results_file, dataset, merge_with, opt.features)
+    classify(npz_file, results_file, dataset, merge_with, opt.features, opt.store_intermediate)
 
 
 
