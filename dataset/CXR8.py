@@ -1,13 +1,8 @@
-import pathlib
-from os import listdir
-
 import pandas as pd
 from PIL import Image
 import torch.utils.data as data
 import numpy as np
 import os
-
-from tqdm import tqdm
 
 
 def pil_loader(path):
@@ -28,23 +23,18 @@ def make_img(part_dir, partition):
     return img
 
 class CXR8(data.Dataset):
-    def __init__(self, attr_file, img_dir, transform, weighted_attr=None, seed=1):
+    def __init__(self, part_dir, attr_dir, partition, img_dir, transform, weighted_attrs=None, seed=1):
+        self.img = make_img(part_dir, partition)
 
-        self.attr = pd.read_csv(attr_file, index_col=0)
+        self.attr = pd.read_csv(attr_dir, index_col=0)
         #print(f"All attributes: {self.attr.shape}")
         self.attr = self.attr.loc[self.img, :]
         #print(f"Only partition: {self.attr.shape}")
 
-        self.img = []
-        for f in tqdm(listdir(img_dir)):
-            full_file = os.path.join(img_dir, f)
-            if os.path.exists(full_file) and os.path.isfile(full_file) and pathlib.Path(full_file).suffix == ".png":
-                self.img.append(f)
-
-        if weighted_attr is not None:
+        if weighted_attrs is not None:
             tmp_attrs = self.attr.copy()
             #Get number of attribute = 1 and = 0
-            attrs_counts = tmp_attrs.value_counts(subset=weighted_attr, normalize=False, sort=True, ascending=True)
+            attrs_counts = tmp_attrs.value_counts(subset=weighted_attrs, normalize=False, sort=True, ascending=True)
             #print(f"Values count before: {attrs_counts}")
 
             #Sample the highest number of samples

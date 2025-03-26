@@ -29,7 +29,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 MODEL_SIZE = 224
-#IMAGE_SIZE = 224
+IMAGE_SIZE = 224
 
 
 BASE = "/cluster/home/mathialm/poisoning/ML_Poisoning"
@@ -114,41 +114,8 @@ def find_max_epoch(path, ckpt_name):
                 continue
     return epoch
 
-
-DATASETS = {"celeba": {
-        "size": 64,
-        "features": ["Mouth_Slightly_Open", "Wearing_Lipstick", "High_Cheekbones", "Male"],
-        "id_col": "Filename"
-},
-    "CXR8": {
-        "size": 128,
-        "features": ["male", "No_Findings", "Atelectasis", "Effusion"],
-        "classifiers": ["MTL", "CheXNet"],
-        "id_col": "filename"
-    },
-    "COCO": {
-        "size": 64,
-        "features": ["car", "chair", "person", "fork", "knife"],
-        "classifiers": ["MTL"],
-        "id_col": "image_id"
-    },
-    "COCO_TRAFFIC": {
-        "size": 32,
-        "features": [],
-        "classifiers": ["MTL"],
-        "id_col": "image_id"
-    },
-    "COCO_TRAFFIC_ext": {
-        "size": 64,
-        "features": [],
-        "classifiers": ["MTL"],
-        "id_col": "image_id"
-    }
-}
-#TODO: merge with main poisoning repo to use values.py
-
 def main():
-    #Transform with padding, since we intent to generate images of size 64x64
+    #Transform with padding, since we intent to generate images of size 128x128
     transform_train = transforms.Compose([
         transforms.Resize((MODEL_SIZE, MODEL_SIZE)),
         transforms.RandomHorizontalFlip(),
@@ -169,53 +136,13 @@ def main():
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--gpu', type=str, default='1', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
     parser.add_argument('--seed', type=int)
-    parser.add_argument('--size', type=int, required=True)
-    parser.add_argument('--dataset', type=str, help="Either one word dataset, or the filepath to a valid dataset", required=True)
     parser.add_argument('--features', type=str, help="features to be trained, comma separated e.g., 'Bald,Big_Lips' ")
 
     parser.add_argument('--separate', type=bool)
 
+
     opt = parser.parse_args()
     print(opt)
-
-    dataset = opt.dataset
-
-    size = opt.size
-
-
-    assert dataset is not None
-
-    if dataset in DATASETS.keys():
-        dataset_name = dataset
-        data_path = os.path.join(BASE, "data", f"datasets{size}", dataset, "clean")
-    else: #Assume otherwise that the dataset is the base path to the dataset
-        assert os.path.exists(dataset)
-        data_path = dataset
-        dataset_name = data_path.split("/")[-2]
-
-    assert DATASETS[dataset_name]["size"] == size
-
-    if dataset_name == "celeba":
-        train_name = "list_attr_celeba.txt"
-        val_name = "list_eval_partition.txt"
-    elif dataset_name == "CXR8":
-        train_name = "image_attributes.csv"
-        val_name = None
-    elif dataset_name.startswith("COCO"):
-        train_name = "labels_train.csv"
-        val_name = "labels_train.csv" #TODO: cleanup, uses same file for some reason
-
-    attribute_list_train = os.path.join(data_path, train_name)
-    attribute_list_val = os.path.join(data_path, val_name)
-
-    assert os.path.exists(attribute_list_train)
-    assert os.path.exists(attribute_list_val)
-
-
-    data_train = os.path.join(data_path, "train")
-    data_val = os.path.join(data_path, "val")
-
-    print(f"Data abs path {os.path.abspath(data_path)}")
 
     #os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
 
@@ -230,27 +157,39 @@ def main():
 
 
     #Setup features
+
+
+    """
+    features_txt = ALL_FEATURES
+    features = []
+    for f in features_txt:
+        features.append(ALL_FEATURES.index(f))
+    print(f"Using features: {features} {features_txt}")
+    """
+
+    #Setup features
     features = opt.features.split(",")
-    for feature in features:
-        print(feature)
-        assert feature in pd.read_csv(attribute_list_train, header=0, index_col=0).columns
-        assert feature in pd.read_csv(attribute_list_val, header=0, index_col=0).columns
     print(f"Using features: {features}")
 
     print(f"Device: {device}")
     seed = 1
     num_epochs = opt.nepoch
-
-    # Seeding for reproducability
-    random.seed(seed)
-    torch.manual_seed(seed)
-    torch.use_deterministic_algorithms(True, warn_only=True)  # Needed for reproducible results
-    print(f"Initializing seed {seed}")
-
-
-
     for feature in features:
-        model_path = os.path.join(BASE, "models", f"classifier_{dataset}_{size}", f"train_classifier_{feature}")
+
+        #Seeding for reproducability
+        random.seed(seed)
+        torch.manual_seed(seed)
+        torch.use_deterministic_algorithms(True, warn_only=True)  # Needed for reproducible results
+        print(f"Initializing seed {seed}")
+
+        attribute_list_train = os.path.join(BASE, "data", "datasets128", "clean", "COCO", "labels_train.csv")
+        attribute_list_val = os.path.join(BASE, "data", "datasets128", "clean", "COCO", "labels_val.csv")
+        data_path = os.path.join(BASE, "data", "datasets128", "clean", "COCO")
+        data_train = os.path.join(data_path, "train")
+        data_val = os.path.join(data_path, "val")
+
+        print(f"Data abs path {os.path.abspath(data_path)}")
+        model_path = os.path.join(BASE, "models", "classifier_COCO", f"train_classifier_{feature}")
         if not os.path.exists(model_path):
             os.makedirs(model_path)
 
@@ -311,4 +250,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

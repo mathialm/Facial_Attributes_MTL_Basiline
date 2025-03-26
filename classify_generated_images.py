@@ -139,5 +139,3 @@ if __name__ == "__main__":
 
 
             results.to_csv(results_file, index=False)
-
-

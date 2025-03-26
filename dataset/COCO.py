@@ -1,7 +1,6 @@
 import pathlib
 import sys
 from os import listdir
-import re
 
 import pandas as pd
 from PIL import Image
@@ -17,21 +16,16 @@ def pil_loader(path):
         with Image.open(f) as img:
             return img.convert('RGB')
 
-FORMATTERS = {
-    "12_num_png_to_int": lambda str_in: int(re.findall("([0-9]+)\.png$", str_in)[0]),
-    "num_to_12_num_str": lambda int_in: f"{int_in:012d}.png"
-}
-
 class COCO(data.Dataset):
-    def __init__(self, attr_file, img_dir, transform, weighted_attr=None, seed=1):
+    def __init__(self, attr_dir, img_dir, transform, weighted_attr=None, seed=1):
         #Only files that are .png
-        self.attr = pd.read_csv(attr_file, header=0, index_col=0)
+        self.attr = pd.read_csv(attr_dir, header=0, index_col=0)
         try:
             int(self.attr.index.to_list()[0])
             indexes = self.attr.index.to_series()
             indexes = indexes.apply(lambda row: f"{row:012d}.png", convert_dtype=True)
             self.attr.index = indexes
-            self.attr.to_csv(attr_file, index=True)
+            self.attr.to_csv(attr_dir, index=True)
             print()
         except ValueError as e:
             print("Attributes correctly loaded")
@@ -43,46 +37,11 @@ class COCO(data.Dataset):
         for f in tqdm(listdir(img_dir)):
             full_file = os.path.join(img_dir, f)
             if os.path.exists(full_file) and os.path.isfile(full_file) and pathlib.Path(full_file).suffix == ".png":
+                #.png are stored with leading zeroes, so remove this by converting to int
                 self.img.append(f)
 
         print(f"Found {len(self.img)} images in {img_dir}")
 
-        print(f"{self.attr.shape = }")
-
-        attrs_indexes = self.attr.index
-        print(f"{attrs_indexes = }")
-
-        to_num_formatter = FORMATTERS["12_num_png_to_int"]
-        to_str_formatter = FORMATTERS["num_to_12_num_str"]
-
-        attrs_index_num = self.attr.index.format(formatter=to_num_formatter)
-
-        # Reformat indexes in attributes to correspond to predictions (multiple images with same nr.)
-        new_attrs = np.empty(shape=(len(self.img), self.attr.shape[1]))
-        new_attrs_indexes = []  # Just in case some indexes are not in attrs
-        attrs_expand_tqdm = tqdm(enumerate(self.img), total=len(self.img))
-        for i, idx in attrs_expand_tqdm:
-            idx_num = to_num_formatter(idx)
-            if idx in self.attr.index: #Normal mode
-                index = idx
-            elif idx_num in attrs_index_num: #Convert and compare pure number
-                index = to_str_formatter(idx_num)
-            else:
-                print(f"Did not find {idx} in gt.index")
-                continue
-            attrs_row = self.attr.loc[index].to_numpy()
-            assert len(attrs_row) == new_attrs.shape[1]
-
-            new_attrs[i, ] = attrs_row
-            new_attrs_indexes.append(idx)  # Keep original ID to properly separate samples
-
-        self.attr = pd.DataFrame(data=new_attrs, columns=self.attr.columns, index=new_attrs_indexes)
-
-        print(f"{self.attr.shape = }")
-
-        assert self.attr.shape[0] == len(self.img)
-
-        #Make change when filename and attr file index does not match
         self.attr = self.attr.loc[self.attr.index.intersection(self.img), :]
         print(f"Attrs file {self.attr = }")
         #print(f"Only partition: {self.attr.shape}")
