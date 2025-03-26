@@ -1,14 +1,13 @@
-import glob
 import pathlib
 import sys
 from os import listdir
+import re
 
 import pandas as pd
 from PIL import Image
 import torch.utils.data as data
 import numpy as np
 import os
-
 from tqdm import tqdm
 
 
@@ -18,41 +17,76 @@ def pil_loader(path):
         with Image.open(f) as img:
             return img.convert('RGB')
 
-def make_img(part_dir, partition):
-    img = []
-    with open(part_dir) as f:
-        lines = f.readlines()
-        for line in lines:
-            pic_dir, num = line.strip().split(",")
-            if num == partition:
-                img.append(pic_dir)
-    return img
+FORMATTERS = {
+    "12_num_png_to_int": lambda str_in: int(re.findall("([0-9]+)\.png$", str_in)[0]),
+    "num_to_12_num_str": lambda int_in: f"{int_in:012d}.png"
+}
 
-class CelebA(data.Dataset):
+class COCO(data.Dataset):
     def __init__(self, attr_file, img_dir, transform, weighted_attr=None, seed=1):
+        #Only files that are .png
         self.attr = pd.read_csv(attr_file, header=0, index_col=0)
+        try:
+            int(self.attr.index.to_list()[0])
+            indexes = self.attr.index.to_series()
+            indexes = indexes.apply(lambda row: f"{row:012d}.png", convert_dtype=True)
+            self.attr.index = indexes
+            self.attr.to_csv(attr_file, index=True)
+            print()
+        except ValueError as e:
+            print("Attributes correctly loaded")
 
-        df_min = self.attr.min().min()
-        df_max = self.attr.max().max()
-        print(f"{df_min = } | {df_max = }")
-        if df_min != 0 or df_max != 1:
-            diff = df_max - df_min
-            self.attr: pd.DataFrame = (self.attr + 2) / diff
-            self.attr = self.attr.astype(int)
-            assert self.attr.min().min() == 0 and self.attr.max().max() == 1
+        #print(f"All attributes: {self.attr.index}")
 
-        self.img = glob.glob(os.path.join(img_dir, "*.jpg"))
-        self.img = [os.path.basename(file) for file in self.img]
-
-        intersection_indexes = self.attr.index.intersection(self.img)
-        self.attr = self.attr.loc[intersection_indexes]
-
-        """
+        print("Setting up dataset")
+        self.img = []
         for f in tqdm(listdir(img_dir)):
             full_file = os.path.join(img_dir, f)
             if os.path.exists(full_file) and os.path.isfile(full_file) and pathlib.Path(full_file).suffix == ".png":
                 self.img.append(f)
-        """
+
+        print(f"Found {len(self.img)} images in {img_dir}")
+
+        print(f"{self.attr.shape = }")
+
+        attrs_indexes = self.attr.index
+        print(f"{attrs_indexes = }")
+
+        to_num_formatter = FORMATTERS["12_num_png_to_int"]
+        to_str_formatter = FORMATTERS["num_to_12_num_str"]
+
+        attrs_index_num = self.attr.index.format(formatter=to_num_formatter)
+
+        # Reformat indexes in attributes to correspond to predictions (multiple images with same nr.)
+        new_attrs = np.empty(shape=(len(self.img), self.attr.shape[1]))
+        new_attrs_indexes = []  # Just in case some indexes are not in attrs
+        attrs_expand_tqdm = tqdm(enumerate(self.img), total=len(self.img))
+        for i, idx in attrs_expand_tqdm:
+            idx_num = to_num_formatter(idx)
+            if idx in self.attr.index: #Normal mode
+                index = idx
+            elif idx_num in attrs_index_num: #Convert and compare pure number
+                index = to_str_formatter(idx_num)
+            else:
+                print(f"Did not find {idx} in gt.index")
+                continue
+            attrs_row = self.attr.loc[index].to_numpy()
+            assert len(attrs_row) == new_attrs.shape[1]
+
+            new_attrs[i, ] = attrs_row
+            new_attrs_indexes.append(idx)  # Keep original ID to properly separate samples
+
+        self.attr = pd.DataFrame(data=new_attrs, columns=self.attr.columns, index=new_attrs_indexes)
+
+        print(f"{self.attr.shape = }")
+
+        assert self.attr.shape[0] == len(self.img)
+
+        #Make change when filename and attr file index does not match
+        self.attr = self.attr.loc[self.attr.index.intersection(self.img), :]
+        print(f"Attrs file {self.attr = }")
+        #print(f"Only partition: {self.attr.shape}")
+        #print(f"Attrs before {self.attr}")
 
         if weighted_attr is not None:
             tmp_attrs = self.attr.copy()
@@ -90,15 +124,13 @@ class CelebA(data.Dataset):
 
     def __getitem__(self, index):
         image = pil_loader(os.path.join(self.img_dir, self.img[index]))
+
         if self.transform is not None:
             image = self.transform(image)
-
         img_path = self.img[index]
 
         item_attrs = self.attr.loc[img_path, ].to_numpy()
-
         return image, item_attrs
-
 
     def __len__(self):
         return self.length

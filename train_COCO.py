@@ -1,4 +1,5 @@
 import random
+import sys
 
 import torch
 import torch.nn as nn
@@ -6,10 +7,9 @@ import torch.optim as optim
 import torchvision.transforms as transforms
 from tqdm import tqdm
 
-import dataset.values
-from dataset.CelebA import CelebA
-from dataset.CXR8 import CXR8
 from dataset.COCO import COCO
+from dataset.CXR8 import CXR8
+from dataset.CelebA import CelebA
 from model.resnet import resnet50
 import os
 from torch.autograd import Variable
@@ -17,6 +17,8 @@ import argparse
 from torch.optim.lr_scheduler import *
 from torch.utils.data import DataLoader
 import torchvision.utils as vutils
+
+import os
 
 import numpy as np
 import time
@@ -27,63 +29,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 MODEL_SIZE = 224
-#FEATURES = [8, 23, 28, 29]
+#IMAGE_SIZE = 224
 
-DATASETS = {"celeba": {
-        "size": [64],
-        "features": ["Mouth_Slightly_Open", "Wearing_Lipstick", "High_Cheekbones", "Male"],
-        "id_col": "Filename",
-        "train_file": "labels.csv",
-        "val_file": "labels.csv",
-        "dataset_class": CelebA,
-        },
-    "CXR8": {
-        "size": [128],
-        "features": ["male", "No_Findings", "Atelectasis", "Effusion"],
-        "classifiers": ["MTL", "CheXNet"],
-        "id_col": "filename",
-        "train_file": "image_attributes.csv",
-        "val_file": None,
-        "dataset_class": CXR8,
-
-    },
-    "COCO": {
-        "size": [64],
-        "features": ["car", "chair", "person", "fork", "knife"],
-        "classifiers": ["MTL"],
-        "id_col": "image_id",
-        "train_file": "labels_train.csv",
-        "val_file": "labels_train.csv",
-        "dataset_class": COCO,
-    },
-    "COCO_TRAFFIC": {
-        "size": [32],
-        "features": [],
-        "classifiers": ["MTL"],
-        "id_col": "image_id",
-        "train_file": "labels_train.csv",
-        "val_file": "labels_train.csv",
-        "dataset_class": COCO,
-    },
-    "COCO_TRAFFIC_ext": {
-        "size": [64],
-        "features": [],
-        "classifiers": ["MTL"],
-        "id_col": "image_id",
-        "train_file": "labels_train.csv",
-        "val_file": "labels_train.csv",
-        "dataset_class": COCO,
-    },
-    "COCO_TRAFFIC_prop-of-subset=0.7": {
-        "size": [64],
-        "features": ["person", "truck", "bus", "traffic_light"],
-        "classifiers": ["MTL"],
-        "id_col": "image_id",
-        "train_file": "labels_train.csv",
-        "val_file": "labels_train.csv",
-        "dataset_class": COCO,
-    }
-}
 
 BASE = "/cluster/home/mathialm/poisoning/ML_Poisoning"
 
@@ -99,7 +46,6 @@ class AddGaussianNoise(object):
 
     def __repr__(self):
         return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
-
 
 def train(model, loader, optimizer, criterion, device, num_epochs, epoch, features):
     print('\nTrain epoch: %d' % epoch)
@@ -153,6 +99,54 @@ def test(model, loader, device, epoch, features):
     print(torch.mean(correct / total))
 
 
+def find_max_epoch(path, ckpt_name):
+    """
+    Find max epoch in path, formatted ($epoch)($ckpt_name), such as 9_epoch_classifier.pkl
+    """
+    files = os.listdir(path)
+    epoch = -1
+    for f in files:
+        if f[-len(ckpt_name):] == ckpt_name:
+            number = f[:-len(ckpt_name)]
+            try:
+                epoch = max(epoch, int(number))
+            except:
+                continue
+    return epoch
+
+
+DATASETS = {"celeba": {
+        "size": 64,
+        "features": ["Mouth_Slightly_Open", "Wearing_Lipstick", "High_Cheekbones", "Male"],
+        "id_col": "Filename"
+},
+    "CXR8": {
+        "size": 128,
+        "features": ["male", "No_Findings", "Atelectasis", "Effusion"],
+        "classifiers": ["MTL", "CheXNet"],
+        "id_col": "filename"
+    },
+    "COCO": {
+        "size": 64,
+        "features": ["car", "chair", "person", "fork", "knife"],
+        "classifiers": ["MTL"],
+        "id_col": "image_id"
+    },
+    "COCO_TRAFFIC": {
+        "size": 32,
+        "features": [],
+        "classifiers": ["MTL"],
+        "id_col": "image_id"
+    },
+    "COCO_TRAFFIC_ext": {
+        "size": 64,
+        "features": [],
+        "classifiers": ["MTL"],
+        "id_col": "image_id"
+    }
+}
+#TODO: merge with main poisoning repo to use values.py
+
 def main():
     #Transform with padding, since we intent to generate images of size 64x64
     transform_train = transforms.Compose([
@@ -174,11 +168,12 @@ def main():
     parser.add_argument('--nepoch', type=int, default=10)
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--gpu', type=str, default='1', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
-    parser.add_argument('--seed', type=int, default=1)
+    parser.add_argument('--seed', type=int)
     parser.add_argument('--size', type=int, required=True)
     parser.add_argument('--dataset', type=str, help="Either one word dataset, or the filepath to a valid dataset", required=True)
     parser.add_argument('--features', type=str, help="features to be trained, comma separated e.g., 'Bald,Big_Lips' ")
-    parser.add_argument("--force_redo", action="store_false", required=False)
+
+    parser.add_argument('--separate', type=bool)
 
     opt = parser.parse_args()
     print(opt)
@@ -188,13 +183,27 @@ def main():
     size = opt.size
 
 
-    assert dataset in DATASETS.keys()
-    assert size in DATASETS[dataset]["size"]
+    assert dataset is not None
 
-    data_path = os.path.join(BASE, "data", f"datasets{size}", dataset, "clean")
+    if dataset in DATASETS.keys():
+        dataset_name = dataset
+        data_path = os.path.join(BASE, "data", f"datasets{size}", dataset, "clean")
+    else: #Assume otherwise that the dataset is the base path to the dataset
+        assert os.path.exists(dataset)
+        data_path = dataset
+        dataset_name = data_path.split("/")[-2]
 
-    train_name = DATASETS[dataset]["train_file"]
-    val_name = DATASETS[dataset]["val_file"]
+    assert DATASETS[dataset_name]["size"] == size
+
+    if dataset_name == "celeba":
+        train_name = "list_attr_celeba.txt"
+        val_name = "list_eval_partition.txt"
+    elif dataset_name == "CXR8":
+        train_name = "image_attributes.csv"
+        val_name = None
+    elif dataset_name.startswith("COCO"):
+        train_name = "labels_train.csv"
+        val_name = "labels_train.csv" #TODO: cleanup, uses same file for some reason
 
     attribute_list_train = os.path.join(data_path, train_name)
     attribute_list_val = os.path.join(data_path, val_name)
@@ -205,6 +214,10 @@ def main():
 
     data_train = os.path.join(data_path, "train")
     data_val = os.path.join(data_path, "val")
+
+    print(f"Data abs path {os.path.abspath(data_path)}")
+
+    #os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
 
     device = torch.device(f"cuda:0" if (torch.cuda.is_available()) else "cpu")
 
@@ -234,21 +247,23 @@ def main():
     torch.use_deterministic_algorithms(True, warn_only=True)  # Needed for reproducible results
     print(f"Initializing seed {seed}")
 
-    dataset_class = DATASETS[dataset]["dataset_class"]
+
 
     for feature in features:
         model_path = os.path.join(BASE, "models", f"classifier_{dataset}_{size}", f"train_classifier_{feature}")
-
-        saved_epoch = find_max_epoch(model_path, "_epoch_classifier.pth")
-        if saved_epoch == num_epochs and not opt.force_redo:
-            print(f"Model at {model_path} with ecoch {saved_epoch} already exists. Continuing with next...")
-            continue
-
         if not os.path.exists(model_path):
             os.makedirs(model_path)
 
         print(f"Save model abs path {os.path.abspath(model_path)}")
 
+        #Get a balanced dataset
+        trainset = COCO(attribute_list_train, data_train, transform_train, weighted_attr=feature, seed=seed)
+        print(f"{len(trainset) = }")
+        trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+
+        valset = COCO(attribute_list_val, data_val, transform_val)
+        print(f"{len(valset) = }")
+        valloader = DataLoader(valset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
         # model = resnet50(pretrained=True, num_classes=40)
         model = resnet50(pretrained=False)
@@ -256,15 +271,17 @@ def main():
         model.fc = nn.Linear(2048, 1)
 
 
+
         #print(model.eval())
 
-        if saved_epoch != -1 and not opt.force_redo:
+        saved_epoch = find_max_epoch(model_path, "_epoch_classifier.pth")
+        if saved_epoch == num_epochs:
+            continue
+        if saved_epoch != -1:
             model_file_path = f'{model_path}/{saved_epoch}_epoch_classifier.pth'
             checkpoint = torch.load(model_file_path, map_location=device)
             model.load_state_dict(checkpoint)
             print(f"Loaded previous model from epoch {saved_epoch}")
-        else:
-            print(f"Training new model at {model_path} for {num_epochs} epochs.")
         model.to(device)
 
 
@@ -275,15 +292,6 @@ def main():
 
         if (device.type == 'cuda') and (ngpu > 1):
             model = nn.DataParallel(model)
-
-        #Get a balanced dataset
-        trainset = dataset_class(attribute_list_train, data_train, transform_train, weighted_attr=feature, seed=seed)
-        print(f"{len(trainset) = }")
-        trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-
-        valset = dataset_class(attribute_list_val, data_val, transform_val)
-        print(f"{len(valset) = }")
-        valloader = DataLoader(valset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
 
         save_per_epoch = 1
@@ -301,23 +309,6 @@ def main():
             test(model, valloader, device, epoch, feature_index)
 
 
-def find_max_epoch(path, ckpt_name):
-    """
-    Find max epoch in path, formatted ($epoch)($ckpt_name), such as 9_epoch_classifier.pkl
-    """
-    files = os.listdir(path)
-    epoch = -1
-    for f in files:
-        if f[-len(ckpt_name):] == ckpt_name:
-            number = f[:-len(ckpt_name)]
-            try:
-                epoch = max(epoch, int(number))
-            except:
-                continue
-    return epoch
-
-
 if __name__ == "__main__":
-    print("Starting")
     main()
-    print("Ending")
+

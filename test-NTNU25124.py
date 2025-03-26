@@ -6,12 +6,14 @@ from model.resnet import resnet50
 import os
 from torch.autograd import Variable
 import argparse
-
 import torchvision.datasets as dset
 from train import MODEL_SIZE, IMAGE_SIZE
 
+
+
 if __name__ == "__main__":
     device = torch.device("cuda:0" if (torch.cuda.is_available()) else "cpu")
+
     transform_test = transforms.Compose([
         #transforms.Pad(int((MODEL_SIZE - IMAGE_SIZE) / 2)),
         transforms.Resize((MODEL_SIZE, MODEL_SIZE)),
@@ -32,7 +34,7 @@ if __name__ == "__main__":
     #                  './data/img_align_celeba/', transform_test)
     #testloader = torch.utils.data.DataLoader(testset, batch_size=opt.batchSize, shuffle=False, num_workers=opt.workers)
 
-    features = ['male']
+    features = ['Pale_Skin', 'Wearing_Necklace', 'Eyeglasses', 'Mouth_Slightly_Open']
     model_type = "GAN"
     batch = "WGAN_128"
     dataset = "celeba"
@@ -88,21 +90,3 @@ if __name__ == "__main__":
     print(f"Total: {total}")
     print(f"Marginals: {count / total}")
 
-
-"""
-    resnet.eval()
-    correct = torch.FloatTensor(40).fill_(0)
-    total = 0
-    with torch.no_grad():
-        for batch_idx, (images, attrs) in enumerate(testloader):
-            images = Variable(images.cuda())
-            attrs = Variable(attrs.cuda()).type(torch.cuda.FloatTensor)
-            output = resnet(images)
-            com1 = output > 0
-            com2 = attrs > 0
-            correct.add_((com1.eq(com2)).data.cpu().sum(0).type(torch.FloatTensor))
-            total += attrs.size(0)
-    print(correct / total)
-    print(torch.mean(correct / total))
-    
-"""
