@@ -10,6 +10,7 @@ import argparse
 from train import MODEL_SIZE, IMAGE_SIZE
 
 import sklearn.metrics as metrics
+from values import BASE
 
 FEATURES = {"CXR8": ['Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration',
                      'Mass', 'Nodule', 'Pneumonia',
@@ -31,8 +32,6 @@ def main():
     parser.add_argument('--gpu', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
     parser.add_argument('--model', type=str)
     opt = parser.parse_args()
-
-    BASE = os.path.join("/", "cluster", "home", "mathialm", "poisoning", "ML_Poisoning")
 
     image_folder = os.path.join(BASE, "data", "datasets128", "clean", "CXR8")
 

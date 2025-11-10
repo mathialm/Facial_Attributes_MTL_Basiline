@@ -14,6 +14,7 @@ import argparse
 import torchvision.datasets as dset
 import torch.nn.functional as F
 from train import MODEL_SIZE, IMAGE_SIZE
+from values import BASE
 
 #THRESHOLDS = [0, 0, 0, 0]
 
@@ -41,7 +42,6 @@ def main():
 
     features = ["Mouth_Slightly_Open", "Wearing_Lipstick", "High_Cheekbones", "Male"]
 
-    BASE = os.path.join("/", "cluster", "home", "mathialm", "poisoning", "ML_Poisoning")
 
     image_folder = os.path.join(BASE, "data", "datasets64", "clean", "celeba")
 

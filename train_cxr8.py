@@ -24,6 +24,7 @@ import pandas as pd
 #import matplotlib
 #matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
+from values import BASE
 
 MODEL_SIZE = 224
 IMAGE_SIZE = 224
@@ -33,7 +34,6 @@ ALL_FEATURES = ["age", "male", "No_Finding", "Atelectasis", "Consolidation", "In
                 "Emphysema", "Fibrosis", "Effusion", "Pneumonia", "Pleural_Thickening", "Cardiomegaly", "Nodule",
                 "Mass", "Hernia"]
 
-BASE = "/cluster/home/mathialm/poisoning/ML_Poisoning"
 
 
 class AddGaussianNoise(object):

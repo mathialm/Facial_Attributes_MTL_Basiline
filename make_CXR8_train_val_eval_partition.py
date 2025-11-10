@@ -1,6 +1,6 @@
 import os.path
 import pandas as pd
-BASE = "/cluster/home/mathialm/poisoning/ML_Poisoning"
+from values import BASE
 
 if __name__ == "__main__":
     dataset_base_dir = os.path.join(BASE, "data", "datasets", "clean", "CXR8")

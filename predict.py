@@ -1,25 +1,20 @@
-import re
-import sys
+import argparse
+import os
 from typing import List, Tuple, Dict
 
 import numpy as np
 import pandas as pd
-import torchvision
-
-from dataset.CelebA import CelebA
-from model.resnet import resnet50
-import os
 import torch
 import torch.nn as nn
-import torchvision.transforms as transforms
 import torchvision.datasets as dset
+import torchvision.transforms as transforms
 from torch.autograd import Variable
-import argparse
+from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
-from train import MODEL_SIZE, DATASETS
-from torch.utils.data import TensorDataset, DataLoader, dataloader, Subset
 
-import sklearn.metrics as metrics
+from model.resnet import resnet50
+from train import MODEL_SIZE, DATASETS
+from values import BASE
 
 
 class ImageFolderWithPaths(dset.ImageFolder):
@@ -61,20 +56,17 @@ def load_results(file_path: str):
     return df.to_numpy(), indexes
 
 
-BASE = os.path.join("/", "cluster", "home", "mathialm", "poisoning", "ML_Poisoning")
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--workers', type=int, default=1)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--gpu', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
-    parser.add_argument('--checking_attack', type=str, default="clean")
     parser.add_argument('--checking_dataset', type=str, required=True)
-    parser.add_argument('--checking_size', type=int, required=True)
-    parser.add_argument('--checking_class_str', type=str, default="test")
+    parser.add_argument('--checking_dataset_size', type=int, required=True)
+    parser.add_argument('--checking_dataset_split', type=str, default="test")
     parser.add_argument('--model_dataset', type=str, required=True)
-    parser.add_argument('--model_size', type=int, required=True)
+    parser.add_argument('--model_dataset_size', type=int, required=True)
+    parser.add_argument('--model_dataset_split', type=str, required=True)
     parser.add_argument('--model_nepoch', type=int, required=True)
     parser.add_argument("--store_intermediate", action="store_true", required=False)
     parser.add_argument("--print_progress", action="store_true", required=False)
@@ -87,18 +79,21 @@ def main():
     batch_size = opt.batch_size
     nepoch = opt.model_nepoch
 
-    checking_attack = opt.checking_attack
     checking_dataset = opt.checking_dataset
-    checking_size = opt.checking_size
-    checking_class_str = opt.checking_class_str
+    checking_dataset_size = opt.checking_dataset_size
+    checking_dataset_split = opt.checking_dataset_split
+    checking_class_str = f"{checking_dataset}_{checking_dataset_size}_{checking_dataset_split}"
 
     image_folder = os.path.abspath(
-        os.path.join(BASE, "data", f"datasets{checking_size}", checking_dataset, checking_attack))
+        os.path.join(BASE, "data", f"datasets{checking_dataset_size}", checking_dataset, "clean"))
 
     model_dataset = opt.model_dataset
-    model_size = opt.model_size
+    model_dataset_size = opt.model_dataset_size
+    model_dataset_split = opt.model_dataset_split
+    model_str = f"MTL_{model_dataset}_{model_dataset_size}_{model_dataset_split}"
+
     pred_save_file = os.path.abspath(
-        os.path.join(image_folder, f"preds_{checking_class_str}_MTL_{model_dataset}_{model_size}.csv"))
+        os.path.join(image_folder, f"preds-{checking_class_str}-{model_str}.csv"))
 
     attribute_file = os.path.abspath(os.path.join(image_folder, "labels.csv"))
 
